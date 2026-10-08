@@ -111,6 +111,8 @@ Entry-point plugins load only with `--entry-point-plugins` or `load_entry_point_
 
 Stages talk to `ctx.llm`, not the SDK. `AnthropicLLM(model=...)` is the default implementation: adaptive thinking, structured outputs via `messages.parse`, and server-side code-execution and web-search tools for the built-in stages. The default model is `claude-opus-4-8`; change it with `--model` or `AnthropicLLM(model=...)`.
 
+**Output style.** Generated text never contains em dashes or emojis. `AnthropicLLM` asks for this in its system prompt, and `Auditor.default()` enforces it with an output filter (`ai_auditor.style.clean_value`) applied to every stage output and to a generated solution. A solution you pass with `--solution` is never altered, because it is what's being audited. Pass `output_filter=None` / `AnthropicLLM(system=None)` to turn this off.
+
 Any object with `complete` and `parse` works. The tests use a fake one, so they make no API calls:
 
 ```bash

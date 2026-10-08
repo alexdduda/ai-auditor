@@ -5,7 +5,7 @@ other stages' outputs it needs (`requires`); the Auditor resolves the graph,
 runs every stage as soon as its inputs are ready (independent stages run
 concurrently), and collects the outputs into an AuditResult.
 
-You extend an audit by adding stages — no changes to the framework needed:
+You extend an audit by adding stages, with no changes to the framework:
 
     from ai_auditor import Auditor, stage
 
@@ -210,6 +210,7 @@ class Auditor:
         fail_fast: bool = True,
         on_event: Callable[[StageEvent], None] | None = None,
         reporter: Callable[[AuditResult], str] | None = None,
+        output_filter: Callable[[Any], Any] | None = None,
     ):
         self._stages: dict[str, Stage] = {}
         for s in stages:
@@ -220,6 +221,8 @@ class Auditor:
         self.fail_fast = fail_fast
         self.on_event = on_event
         self.reporter = reporter
+        #: Applied to every stage output and to a generated (not a user-supplied) solution.
+        self.output_filter = output_filter
 
     @classmethod
     def default(cls, **kwargs: Any) -> "Auditor":
@@ -227,10 +230,12 @@ class Auditor:
         from .llm import AnthropicLLM
         from .report import build_report
         from .stages import DEFAULT_STAGES, generate_solution
+        from .style import clean_value
 
         kwargs.setdefault("llm", AnthropicLLM())
         kwargs.setdefault("solver", generate_solution)
         kwargs.setdefault("reporter", build_report)
+        kwargs.setdefault("output_filter", clean_value)
         return cls(DEFAULT_STAGES, **kwargs)
 
     # ── composition ────────────────────────────────────────────────────────
@@ -312,7 +317,7 @@ class Auditor:
                 raise ValueError("no solution given and this Auditor has no solver")
             t0 = time.perf_counter()
             self._emit(StageEvent("solution", "started"))
-            ctx._solution = self.solver(ctx)
+            ctx._solution = self._filter(self.solver(ctx))
             timings["solution"] = time.perf_counter() - t0
             self._emit(StageEvent("solution", "finished", timings["solution"]))
 
@@ -344,9 +349,9 @@ class Auditor:
                     n, t0 = running.pop(fut)
                     timings[n] = time.perf_counter() - t0
                     try:
-                        ctx.outputs[n] = fut.result()
+                        ctx.outputs[n] = self._filter(fut.result())
                         self._emit(StageEvent(n, "finished", timings[n]))
-                    except Exception as e:  # noqa: BLE001 — stages are user code
+                    except Exception as e:  # noqa: BLE001 (stages are user code)
                         self._emit(StageEvent(n, "failed", timings[n], error=str(e)))
                         if self.fail_fast:
                             for other in running:
@@ -360,6 +365,9 @@ class Auditor:
         )
         result.report = (self.reporter or _plain_report)(result)
         return result
+
+    def _filter(self, value: Any) -> Any:
+        return self.output_filter(value) if self.output_filter else value
 
     def _emit(self, event: StageEvent) -> None:
         if self.on_event:

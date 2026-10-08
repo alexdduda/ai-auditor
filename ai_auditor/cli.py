@@ -82,7 +82,7 @@ def main(argv: list[str] | None = None) -> None:
             for name in wave:
                 s = stages[name]
                 flags = " [evidence]" if s.evidence else ""
-                print(f"wave {i}: {name}{flags} — requires {', '.join(s.requires) or 'nothing'}. {s.description}")
+                print(f"wave {i}: {name}{flags}: requires {', '.join(s.requires) or 'nothing'}. {s.description}")
         return
 
     if not _has_credentials():

@@ -245,6 +245,54 @@ class PluginTests(unittest.TestCase):
         self.assertIn("cannot import plugin", err.getvalue())
 
 
+class StyleTests(unittest.TestCase):
+    def test_clean_removes_em_dashes_and_emojis(self):
+        from ai_auditor.style import clean
+        self.assertEqual(clean("Honestly — very little remains."), "Honestly, very little remains.")
+        self.assertEqual(clean("closed—verifiable"), "closed, verifiable")
+        self.assertEqual(clean("Checks out ✅ twice 👍."), "Checks out twice.")
+        self.assertEqual(clean("— leading dash"), "leading dash")
+        self.assertEqual(clean("ranges like 3–5 stay"), "ranges like 3–5 stay")  # en dash kept
+
+    def test_generated_outputs_are_cleaned_but_user_solution_is_not(self):
+        from ai_auditor.style import clean_value
+
+        class DashyLLM(FakeLLM):
+            def complete(self, prompt, **kw):
+                c = super().complete(prompt, **kw)
+                return Completion(c.text + " — sure 🚀", c.block_types)
+
+            def parse(self, prompt, schema, **kw):
+                out = super().parse(prompt, schema, **kw)
+                if schema is S.ConfidenceResult:
+                    return S.ConfidenceResult(score=out.score, reasoning="High — verified ✨")
+                return out
+
+        user_solution = "4 — obviously"
+        result = default_auditor(DashyLLM(), output_filter=clean_value).run("What is 2+2?", solution=user_solution)
+        self.assertEqual(result.solution, user_solution)  # the audited text is never altered
+        report_without_solution = result.report.replace(user_solution, "")
+        self.assertNotIn("—", report_without_solution)
+        self.assertNotIn("🚀", result.report)
+        self.assertEqual(result["confidence"].reasoning, "High, verified")
+        generated = default_auditor(DashyLLM(), output_filter=clean_value).run("What is 2+2?")
+        self.assertNotIn("—", generated.solution)
+
+    def test_anthropic_llm_sends_style_instruction(self):
+        from ai_auditor.llm import AnthropicLLM
+        from ai_auditor.style import STYLE_INSTRUCTION
+        client = mock.MagicMock()
+        client.messages.create.return_value = mock.MagicMock(stop_reason="end_turn", content=[])
+        client.messages.parse.return_value = mock.MagicMock(stop_reason="end_turn", parsed_output="ok")
+        llm = AnthropicLLM(client=client)
+        llm.complete("hi")
+        llm.parse("hi", S.AssumptionList)
+        self.assertEqual(client.messages.create.call_args.kwargs["system"], STYLE_INSTRUCTION)
+        self.assertEqual(client.messages.parse.call_args.kwargs["system"], STYLE_INSTRUCTION)
+        AnthropicLLM(client=client, system=None).complete("hi")
+        self.assertNotIn("system", client.messages.create.call_args.kwargs)
+
+
 class CredentialPreflightTests(unittest.TestCase):
     def test_missing_credentials_fail_before_any_stage(self):
         err = io.StringIO()

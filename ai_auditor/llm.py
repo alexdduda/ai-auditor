@@ -15,6 +15,8 @@ import anthropic
 from anthropic.types import Message
 from pydantic import BaseModel
 
+from .style import STYLE_INSTRUCTION
+
 DEFAULT_MODEL = "claude-opus-4-8"
 
 T = TypeVar("T", bound=BaseModel)
@@ -40,8 +42,10 @@ class LLM(Protocol):
 class AnthropicLLM:
     """Claude via the Anthropic SDK, with adaptive thinking."""
 
-    def __init__(self, model: str = DEFAULT_MODEL, client: anthropic.Anthropic | None = None):
+    def __init__(self, model: str = DEFAULT_MODEL, client: anthropic.Anthropic | None = None,
+                 system: str | None = STYLE_INSTRUCTION):
         self.model = model
+        self.system = system
         self._client = client
         self._lock = threading.Lock()
 
@@ -54,6 +58,8 @@ class AnthropicLLM:
 
     def complete(self, prompt: str, *, effort: str = "medium", max_tokens: int = 4000, tools: list[dict] | None = None) -> Completion:
         kwargs: dict[str, Any] = {}
+        if self.system:
+            kwargs["system"] = self.system
         if tools:
             kwargs["tools"] = tools
         response = self.client.messages.create(
@@ -76,6 +82,7 @@ class AnthropicLLM:
             output_config={"effort": effort},
             messages=[{"role": "user", "content": prompt}],
             output_format=schema,
+            **({"system": self.system} if self.system else {}),
         )
         check_response(response)
         return response.parsed_output
@@ -85,7 +92,7 @@ def check_response(response: Message) -> Message:
     """Raise a clear error on a refusal or truncated response; otherwise pass through."""
     if response.stop_reason == "refusal":
         raise AuditGenerationError(
-            "Claude declined to respond (stop_reason=refusal) — the problem or "
+            "Claude declined to respond (stop_reason=refusal); the problem or "
             "solution may have touched a restricted topic."
         )
     if response.stop_reason == "max_tokens":

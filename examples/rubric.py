@@ -28,7 +28,7 @@ class Rubric(BaseModel):
 
 @stage(
     requires=("solution",), evidence=True, title="RUBRIC", order=35,
-    render=lambda r: "\n".join(f"  [{'MET' if c.met else 'NOT MET'}] {c.criterion} — {c.why}" for c in r.results),
+    render=lambda r: "\n".join(f"  [{'MET' if c.met else 'NOT MET'}] {c.criterion}: {c.why}" for c in r.results),
     summarize=lambda r: f"{sum(c.met for c in r.results)}/{len(r.results)} rubric criteria met",
 )
 def rubric(ctx) -> Rubric:

@@ -59,7 +59,7 @@ class ConfidenceResult(BaseModel):
 def format_verifications(verifications: List[AssumptionVerification]) -> str:
     if not verifications:
         return "(no assumptions extracted)"
-    return "\n".join(f"- [{v.verdict}] {v.assumption} — {v.explanation}" for v in verifications)
+    return "\n".join(f"- [{v.verdict}] {v.assumption}: {v.explanation}" for v in verifications)
 
 
 def format_contradictions(contradictions: List[Contradiction]) -> str:
