@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+from pathlib import Path
 
 import anthropic
 
@@ -32,6 +34,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--list-stages", action="store_true", help="Print the stage graph (after plugins/--skip) and exit.")
     parser.add_argument("-v", "--verbose", action="store_true", help="Log stage progress to stderr.")
     return parser.parse_args(argv)
+
+
+def _has_credentials() -> bool:
+    """Cheap pre-flight so a missing key fails before any stage runs (and costs anything).
+
+    Mirrors the SDK's sources: API key / auth token env vars, federation env vars,
+    or a profile written by `ant auth login`.
+    """
+    env = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE", "ANTHROPIC_FEDERATION_RULE_ID")
+    if any(os.environ.get(k) for k in env):
+        return True
+    config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    return (config_home / "anthropic").is_dir()
 
 
 def build_auditor(args: argparse.Namespace) -> Auditor:
@@ -69,6 +84,15 @@ def main(argv: list[str] | None = None) -> None:
                 flags = " [evidence]" if s.evidence else ""
                 print(f"wave {i}: {name}{flags} — requires {', '.join(s.requires) or 'nothing'}. {s.description}")
         return
+
+    if not _has_credentials():
+        print(
+            "No Anthropic API credentials found. Set ANTHROPIC_API_KEY (e.g. `export "
+            "ANTHROPIC_API_KEY=sk-ant-...`, key from console.anthropic.com), or sign in with "
+            "the `ant` CLI (`ant auth login`). Nothing was sent.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     problem = args.problem
     if not problem:

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import contextlib
+import os
+from unittest import mock
 import io
 import json
 import threading
@@ -241,6 +243,19 @@ class PluginTests(unittest.TestCase):
             cli_main(["--list-stages", "--plugin", "no_such_module_xyz"])
         self.assertEqual(cm.exception.code, 2)
         self.assertIn("cannot import plugin", err.getvalue())
+
+
+class CredentialPreflightTests(unittest.TestCase):
+    def test_missing_credentials_fail_before_any_stage(self):
+        err = io.StringIO()
+        env = {k: v for k, v in os.environ.items() if not k.startswith("ANTHROPIC_")}
+        env["XDG_CONFIG_HOME"] = "/nonexistent-config-home"
+        with mock.patch.dict(os.environ, env, clear=True), contextlib.redirect_stderr(err), \
+                mock.patch("ai_auditor.core.Auditor.run") as run, self.assertRaises(SystemExit) as cm:
+            cli_main(["What is 2+2?", "--solution", "4"])
+        self.assertEqual(cm.exception.code, 1)
+        self.assertIn("No Anthropic API credentials found", err.getvalue())
+        run.assert_not_called()
 
 
 if __name__ == "__main__":
